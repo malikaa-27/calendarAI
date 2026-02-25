@@ -1,0 +1,32 @@
+{
+  "kind": "calendar#event",
+  "etag": "\"3544113892833342\"",
+  "id": "179mmvvu3754uvru57pg12kgno",
+  "status": "confirmed",
+  "htmlLink": "https://www.google.com/calendar/event?eid=MTc5bW12dnUzNzU0dXZydTU3cGcxMmtnbm8gbWFsaWthYW1hcmF0aGUwM0Bt",
+  "created": "2026-02-25T22:02:26.000Z",
+  "updated": "2026-02-25T22:02:26.416Z",
+  "summary": "Just to say hi",
+  "description": "With: Runek (iouanak@smallest.ai)",
+  "creator": {
+    "email": "malikaa@receptionist-488320.iam.gserviceaccount.com"
+  },
+  "organizer": {
+    "email": "malikaamarathe03@gmail.com",
+    "self": true
+  },
+  "start": {
+    "dateTime": "2026-02-26T04:00:00-08:00",
+    "timeZone": "UTC"
+  },
+  "end": {
+    "dateTime": "2026-02-26T04:30:00-08:00",
+    "timeZone": "UTC"
+  },
+  "iCalUID": "179mmvvu3754uvru57pg12kgno@google.com",
+  "sequence": 0,
+  "reminders": {
+    "useDefault": true
+  },
+  "eventType": "default"
+}
