@@ -23,6 +23,7 @@ export function formatIsoRange(startIso: string, endIso: string, locale = 'en-US
 /**
  * Compact summary for voice: "Friday Feb 27: 11 AM, 11:30 AM, 12 PM"
  * Groups slots by day so the date is said once, not repeated per slot.
+ * When a day has availability spanning 9 AM to 5 PM, says "There is availability from 9AM to 5 PM".
  */
 export function formatAvailableSummaryCompact(
   slots: Array<{ start: string; end: string }>,
@@ -34,23 +35,44 @@ export function formatAvailableSummaryCompact(
   const timeFmt = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: 'numeric', hour12: true, timeZone });
   const dayFmt = new Intl.DateTimeFormat(locale, { weekday: 'long', month: 'short', day: 'numeric', timeZone });
 
-  const byDay = new Map<string, string[]>();
+  const hourFmt = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: 'numeric', hour12: false, timeZone: timeZone || undefined });
+  const toDecHours = (d: Date) => {
+    const parts = hourFmt.formatToParts(d);
+    return parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10) +
+      parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10) / 60;
+  };
+  const byDay = new Map<string, { dayLabel: string; times: string[]; minStartH: number; maxEndH: number }>();
   for (const s of slots) {
-    const d = new Date(s.start);
-    const dayKey = d.toISOString().slice(0, 10);
-    const dayLabel = dayFmt.format(d);
-    const timeStr = timeFmt.format(d);
-    if (!byDay.has(dayKey)) byDay.set(dayKey, [dayLabel]);
-    const arr = byDay.get(dayKey)!;
-    if (arr.length === 1) arr.push(timeStr);
-    else if (arr[arr.length - 1] !== timeStr) arr.push(timeStr);
+    const start = new Date(s.start);
+    const end = new Date(s.end);
+    const dayKey = start.toISOString().slice(0, 10);
+    const dayLabel = dayFmt.format(start);
+    const timeStr = timeFmt.format(start);
+    const minStartH = toDecHours(start);
+    const maxEndH = toDecHours(end);
+
+    if (!byDay.has(dayKey)) {
+      byDay.set(dayKey, { dayLabel, times: [timeStr], minStartH, maxEndH });
+    } else {
+      const entry = byDay.get(dayKey)!;
+      if (entry.times.length === 1 || entry.times[entry.times.length - 1] !== timeStr) {
+        entry.times.push(timeStr);
+      }
+      entry.minStartH = Math.min(entry.minStartH, minStartH);
+      entry.maxEndH = Math.max(entry.maxEndH, maxEndH);
+    }
   }
 
   const parts: string[] = [];
-  for (const [, arr] of byDay) {
-    const dayLabel = arr[0];
-    const times = arr.slice(1).join(', ');
-    parts.push(`${dayLabel}: ${times}`);
+  for (const [, entry] of byDay) {
+    const { dayLabel, times, minStartH, maxEndH } = entry;
+    // Consider "all day" when slots span 9 AM to 5 PM (9.0–17.0)
+    const isAllDay = minStartH <= 9.5 && maxEndH >= 17;
+    if (isAllDay) {
+      parts.push(`${dayLabel}: There is availability from 9AM to 5 PM`);
+    } else {
+      parts.push(`${dayLabel}: ${times.join(', ')}`);
+    }
   }
   return parts.join('; ');
 }

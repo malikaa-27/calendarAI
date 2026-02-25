@@ -5,6 +5,11 @@ import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config(); // fallback: cwd/.env when run from server/
 
+// Set TZ early so slot creation (e.g. "11 AM") uses calendar timezone
+if (process.env.CALENDAR_TIMEZONE) {
+  process.env.TZ = process.env.CALENDAR_TIMEZONE;
+}
+
 import { createServer } from './app';
 import env from './utils/env';
 

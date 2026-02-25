@@ -95,10 +95,11 @@ export async function handleCheckAvailability(req: Request, res: Response, next:
     });
 
     const available = await googleCalendarService.findAvailableSlots(slotsToCheck);
-    // Format slots into human readable strings for the agent to speak
-    const formatted = (available || []).map((s: any) => formatIsoRange(s.start, s.end));
+    const tz = env.CALENDAR_TIMEZONE;
+    // Format slots into human readable strings for the agent to speak (use calendar timezone so times match user's calendar)
+    const formatted = (available || []).map((s: any) => formatIsoRange(s.start, s.end, 'en-US', tz));
     // Compact summary for voice: "Friday Feb 27: 11 AM, 11:30 AM, 12 PM" (date said once, not per slot)
-    const available_summary = formatAvailableSummaryCompact(available || []);
+    const available_summary = formatAvailableSummaryCompact(available || [], 'en-US', tz);
     // persist formatted availability for frontend polling
     try {
       const outDir = path.resolve(__dirname, '../../outputs');
@@ -413,7 +414,7 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
       logger.error('failed_write_event', { error: (e as any).message });
     }
 
-    const readableTime = formatIsoRange(start, end).readable;
+    const readableTime = formatIsoRange(start, end, 'en-US', env.CALENDAR_TIMEZONE).readable;
     const confirmationMessage = `Your meeting is confirmed for ${readableTime}. You'll receive a calendar invite at ${clientEmail}.`;
 
     res.json({

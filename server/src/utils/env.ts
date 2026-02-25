@@ -24,7 +24,8 @@ const envSchema = z.object({
   SMTP_SECURE: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  EMAIL_FROM: z.string().optional()
+  EMAIL_FROM: z.string().optional(),
+  CALENDAR_TIMEZONE: z.string().optional()
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -50,7 +51,8 @@ const env = {
   SMTP_SECURE: parsed.data.SMTP_SECURE === 'true',
   SMTP_USER: parsed.data.SMTP_USER,
   SMTP_PASS: parsed.data.SMTP_PASS,
-  EMAIL_FROM: parsed.data.EMAIL_FROM
+  EMAIL_FROM: parsed.data.EMAIL_FROM,
+  CALENDAR_TIMEZONE: parsed.data.CALENDAR_TIMEZONE
 };
 
 export default env;
