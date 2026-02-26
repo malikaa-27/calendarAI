@@ -16,12 +16,23 @@ export function generateIcs(params: {
   endIso: string;
   uid?: string;
   description?: string;
+  organizerEmail: string;
+  organizerName?: string;
+  attendeeEmail: string;
+  attendeeName?: string;
 }): string {
-  const { summary, startIso, endIso, uid, description } = params;
+  const { summary, startIso, endIso, uid, description, organizerEmail, organizerName, attendeeEmail, attendeeName } = params;
   const dtStart = toIcsDateTime(startIso);
   const dtEnd = toIcsDateTime(endIso);
   const dtStamp = toIcsDateTime(new Date().toISOString());
   const eventUid = uid || `meeting-${Date.now()}-${Math.random().toString(36).slice(2)}@calendar-receptionist`;
+
+  const organizerLine = organizerName
+    ? `ORGANIZER;CN="${escapeIcsValue(organizerName)}":mailto:${organizerEmail}`
+    : `ORGANIZER:mailto:${organizerEmail}`;
+  const attendeeLine = attendeeName
+    ? `ATTENDEE;CN="${escapeIcsValue(attendeeName)}";RSVP=TRUE:mailto:${attendeeEmail}`
+    : `ATTENDEE;RSVP=TRUE:mailto:${attendeeEmail}`;
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -34,6 +45,8 @@ export function generateIcs(params: {
     `DTSTAMP:${dtStamp}Z`,
     `DTSTART:${dtStart}Z`,
     `DTEND:${dtEnd}Z`,
+    organizerLine,
+    attendeeLine,
     `SUMMARY:${escapeIcsValue(summary)}`,
     ...(description ? [`DESCRIPTION:${escapeIcsValue(description)}`] : []),
     'END:VEVENT',

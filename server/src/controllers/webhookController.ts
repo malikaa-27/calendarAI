@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { fromZonedTime } from 'date-fns-tz';
 import googleCalendarService from '../services/googleCalendarService';
 import emailService from '../services/emailService';
 import { logger } from '../middleware/logger';
@@ -7,6 +8,12 @@ import { formatIsoRange, formatAvailableSummaryCompact } from '../utils/formatDa
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
+
+/** Convert a date (with local components) to UTC in the calendar timezone. Fixes 3 AM vs 11 AM bug when server runs in UTC. */
+function toUtcInCalendarTz(d: Date): Date {
+  const tz = env.CALENDAR_TIMEZONE;
+  return tz ? fromZonedTime(d, tz) : d;
+}
 
 const slotSchema = z.object({
   start: z.string().datetime(),
@@ -36,6 +43,7 @@ function isUnsubstitutedTemplate(s: string): boolean {
 }
 
 // Generate default slots for next N days, 9am–5pm, 30-min intervals (when targetDay is empty/unsubstituted)
+// Uses CALENDAR_TIMEZONE so 9 AM = 9 AM in that zone, not server local
 function buildDefaultSlots(daysAhead = 3): { start: string; end: string }[] {
   const slots: { start: string; end: string }[] = [];
   const now = new Date();
@@ -52,9 +60,10 @@ function buildDefaultSlots(daysAhead = 3): { start: string; end: string }[] {
       for (let m = 0; m < 60; m += intervalMinutes) {
         const slotStart = new Date(day);
         slotStart.setHours(h, m, 0, 0);
-        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
-        if (slotStart.getTime() > now.getTime()) {
-          slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() });
+        const slotStartUtc = toUtcInCalendarTz(slotStart);
+        const slotEnd = new Date(slotStartUtc.getTime() + 30 * 60 * 1000);
+        if (slotStartUtc.getTime() > now.getTime()) {
+          slots.push({ start: slotStartUtc.toISOString(), end: slotEnd.toISOString() });
         }
       }
     }
@@ -128,9 +137,10 @@ export async function handleCheckAvailability(req: Request, res: Response, next:
 function buildSlotsFromTargetDay(targetDay: string) {
   const parsedStart = parseDayTimeExpression(targetDay);
   if (!parsedStart) return [];
+  const baseDate = toUtcInCalendarTz(parsedStart);
   // Include requested slot plus nearby alternatives (same day, ±2 hours) so we can offer alternatives if busy
   const slots: { start: string; end: string }[] = [];
-  const baseMs = parsedStart.getTime();
+  const baseMs = baseDate.getTime();
   for (let offset = -120; offset <= 120; offset += 30) {
     const start = new Date(baseMs + offset * 60 * 1000);
     const end = new Date(start.getTime() + 30 * 60 * 1000);
@@ -380,10 +390,7 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
       end: new Date(end),
       summary: purpose || 'Meeting via Receptionist',
       description: `With: ${attendeeName || 'Caller'} (${clientEmail})`,
-      attendees: [
-        { email: clientEmail, displayName: attendeeName },
-        { email: env.GCP_SUBJECT_EMAIL, displayName: 'malikaa (receptionist)' }
-      ]
+      attendees: [{ email: clientEmail, displayName: attendeeName }]
     });
 
     let emailResult: { sent: boolean; reason?: string } = { sent: false };
@@ -394,7 +401,9 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
         summary: purpose || 'Meeting via Receptionist',
         startIso: start,
         endIso: end,
-        eventLink: event.htmlLink || undefined
+        eventLink: event.htmlLink || undefined,
+        organizerEmail: env.GCP_SUBJECT_EMAIL || env.GCP_CLIENT_EMAIL,
+        organizerName: 'Malikaa'
       });
     } catch (emailErr: any) {
       emailResult = { sent: false, reason: emailErr?.message || 'unknown' };

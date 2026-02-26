@@ -10,6 +10,8 @@ type BookingConfirmationInput = {
   startIso: string;
   endIso: string;
   eventLink?: string;
+  organizerEmail: string;
+  organizerName?: string;
 };
 
 class EmailService {
@@ -53,7 +55,11 @@ class EmailService {
     const icsContent = generateIcs({
       summary: input.summary,
       startIso: input.startIso,
-      endIso: input.endIso
+      endIso: input.endIso,
+      organizerEmail: input.organizerEmail,
+      organizerName: input.organizerName,
+      attendeeEmail: input.to,
+      attendeeName: input.attendeeName
     });
 
     try {
