@@ -112,7 +112,13 @@ class GoogleCalendarService {
       start: { dateTime: start.toISOString() },
       end: { dateTime: end.toISOString() },
       attendees: attendees.map((a) => ({ email: a.email, displayName: a.displayName })),
-      reminders: { useDefault: true }
+      reminders: { useDefault: true },
+      conferenceData: {
+        createRequest: {
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+          requestId: `meet-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        }
+      }
     } as any;
 
     const calendarId = env.GCP_SUBJECT_EMAIL || env.GCP_CLIENT_EMAIL;
@@ -121,7 +127,8 @@ class GoogleCalendarService {
       created = await this.calendar.events.insert({
         calendarId,
         requestBody: event,
-        sendUpdates: 'all'
+        sendUpdates: 'all',
+        conferenceDataVersion: 1
       });
     } catch (error: any) {
       const gStatus = error?.code || error?.response?.status;
@@ -137,7 +144,8 @@ class GoogleCalendarService {
         created = await this.calendar.events.insert({
           calendarId,
           requestBody: fallbackEvent,
-          sendUpdates: 'none'
+          sendUpdates: 'none',
+          conferenceDataVersion: 1
         });
         return created.data;
       }

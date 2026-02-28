@@ -4,12 +4,13 @@ import { logger } from '../middleware/logger';
 import { generateIcs } from '../utils/icsGenerator';
 
 type BookingConfirmationInput = {
-  to: string;
+  to: string | string[];
   attendeeName?: string;
   summary: string;
   startIso: string;
   endIso: string;
   eventLink?: string;
+  meetLink?: string;
   organizerEmail: string;
   organizerName?: string;
 };
@@ -25,6 +26,9 @@ class EmailService {
       return { sent: false, reason: 'smtp_not_configured' as const };
     }
 
+    const recipients = Array.isArray(input.to) ? input.to : [input.to];
+    const toStr = recipients.join(', ');
+
     const transporter = nodemailer.createTransport({
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
@@ -35,7 +39,7 @@ class EmailService {
       }
     });
 
-    logger.info('email_sending', { to: input.to, from: env.SMTP_USER });
+    logger.info('email_sending', { to: toStr, from: env.SMTP_USER });
 
     const attendee = input.attendeeName || 'there';
     const subject = `Meeting confirmed: ${input.summary}`;
@@ -46,6 +50,7 @@ class EmailService {
       `Topic: ${input.summary}`,
       `Start: ${new Date(input.startIso).toString()}`,
       `End: ${new Date(input.endIso).toString()}`,
+      input.meetLink ? `Google Meet: ${input.meetLink}` : undefined,
       input.eventLink ? `Calendar link: ${input.eventLink}` : undefined,
       '',
       'Thanks,',
@@ -56,16 +61,17 @@ class EmailService {
       summary: input.summary,
       startIso: input.startIso,
       endIso: input.endIso,
+      meetLink: input.meetLink,
       organizerEmail: input.organizerEmail,
       organizerName: input.organizerName,
-      attendeeEmail: input.to,
+      attendeeEmail: Array.isArray(input.to) ? input.to[0] : input.to,
       attendeeName: input.attendeeName
     });
 
     try {
       await transporter.sendMail({
         from: env.EMAIL_FROM,
-        to: input.to,
+        to: toStr,
         subject,
         text: textLines.join('\n'),
         attachments: [
@@ -76,11 +82,11 @@ class EmailService {
           }
         ]
       });
-      logger.info('email_sent', { to: input.to });
+      logger.info('email_sent', { to: toStr });
       return { sent: true as const };
     } catch (err: any) {
       logger.error('email_send_failed', {
-        to: input.to,
+        to: toStr,
         message: err?.message,
         code: err?.code,
         response: err?.response

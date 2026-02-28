@@ -16,12 +16,13 @@ export function generateIcs(params: {
   endIso: string;
   uid?: string;
   description?: string;
+  meetLink?: string;
   organizerEmail: string;
   organizerName?: string;
   attendeeEmail: string;
   attendeeName?: string;
 }): string {
-  const { summary, startIso, endIso, uid, description, organizerEmail, organizerName, attendeeEmail, attendeeName } = params;
+  const { summary, startIso, endIso, uid, description, meetLink, organizerEmail, organizerName, attendeeEmail, attendeeName } = params;
   const dtStart = toIcsDateTime(startIso);
   const dtEnd = toIcsDateTime(endIso);
   const dtStamp = toIcsDateTime(new Date().toISOString());
@@ -48,6 +49,7 @@ export function generateIcs(params: {
     organizerLine,
     attendeeLine,
     `SUMMARY:${escapeIcsValue(summary)}`,
+    ...(meetLink ? [`LOCATION:${escapeIcsValue(meetLink)}`, `URL:${meetLink}`] : []),
     ...(description ? [`DESCRIPTION:${escapeIcsValue(description)}`] : []),
     'END:VEVENT',
     'END:VCALENDAR'

@@ -9,10 +9,29 @@ import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
 
+const BUSINESS_START_HOUR = 9;  // 9 AM
+const BUSINESS_END_HOUR = 18;   // 6 PM
+
 /** Convert a date (with local components) to UTC in the calendar timezone. Fixes 3 AM vs 11 AM bug when server runs in UTC. */
 function toUtcInCalendarTz(d: Date): Date {
   const tz = env.CALENDAR_TIMEZONE;
   return tz ? fromZonedTime(d, tz) : d;
+}
+
+/** Check if a slot falls within business hours (9 AM - 6 PM) in the calendar timezone */
+function isWithinBusinessHours(slot: { start: string; end: string }): boolean {
+  const tz = env.CALENDAR_TIMEZONE;
+  const hourFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: 'numeric', hour12: false, timeZone: tz || undefined });
+  const toDecHours = (d: Date) => {
+    const parts = hourFmt.formatToParts(d);
+    return parseInt(parts.find((p) => p.type === 'hour')?.value || '0', 10) +
+      parseInt(parts.find((p) => p.type === 'minute')?.value || '0', 10) / 60;
+  };
+  const start = new Date(slot.start);
+  const end = new Date(slot.end);
+  const startH = toDecHours(start);
+  const endH = toDecHours(end);
+  return startH >= BUSINESS_START_HOUR && endH <= BUSINESS_END_HOUR;
 }
 
 const slotSchema = z.object({
@@ -42,13 +61,13 @@ function isUnsubstitutedTemplate(s: string): boolean {
   return /\{\{[^}]*\}\}/.test(s?.trim() || '');
 }
 
-// Generate default slots for next N days, 9am–5pm, 30-min intervals (when targetDay is empty/unsubstituted)
+// Generate default slots for next N days, 9am–6pm, 30-min intervals (when targetDay is empty/unsubstituted)
 // Uses CALENDAR_TIMEZONE so 9 AM = 9 AM in that zone, not server local
 function buildDefaultSlots(daysAhead = 3): { start: string; end: string }[] {
   const slots: { start: string; end: string }[] = [];
   const now = new Date();
-  const startHour = 9;
-  const endHour = 17;
+  const startHour = BUSINESS_START_HOUR;
+  const endHour = BUSINESS_END_HOUR;
   const intervalMinutes = 30;
 
   for (let d = 0; d < daysAhead; d++) {
@@ -88,8 +107,8 @@ export async function handleCheckAvailability(req: Request, res: Response, next:
     const inferredSlots = targetDay ? buildSlotsFromTargetDay(targetDay) : [];
     let slotsToCheck =
       proposedSlots.length > 0
-        ? proposedSlots
-        : inferredSlots;
+        ? proposedSlots.filter(isWithinBusinessHours)
+        : inferredSlots.filter(isWithinBusinessHours);
 
     const usedDefaultFallback = slotsToCheck.length === 0;
     if (slotsToCheck.length === 0) {
@@ -103,7 +122,8 @@ export async function handleCheckAvailability(req: Request, res: Response, next:
       usedDefaultFallback
     });
 
-    const available = await googleCalendarService.findAvailableSlots(slotsToCheck);
+    let available = await googleCalendarService.findAvailableSlots(slotsToCheck);
+    available = available.filter(isWithinBusinessHours);
     const tz = env.CALENDAR_TIMEZONE;
     // Format slots into human readable strings for the agent to speak (use calendar timezone so times match user's calendar)
     const formatted = (available || []).map((s: any) => formatIsoRange(s.start, s.end, 'en-US', tz));
@@ -135,25 +155,43 @@ export async function handleCheckAvailability(req: Request, res: Response, next:
 }
 
 function buildSlotsFromTargetDay(targetDay: string) {
-  const parsedStart = parseDayTimeExpression(targetDay);
+  const { date: parsedStart, timeExplicit } = parseDayTimeExpression(targetDay);
   if (!parsedStart) return [];
   const baseDate = toUtcInCalendarTz(parsedStart);
-  // Include requested slot plus nearby alternatives (same day, ±2 hours) so we can offer alternatives if busy
   const slots: { start: string; end: string }[] = [];
-  const baseMs = baseDate.getTime();
-  for (let offset = -120; offset <= 120; offset += 30) {
-    const start = new Date(baseMs + offset * 60 * 1000);
-    const end = new Date(start.getTime() + 30 * 60 * 1000);
-    if (start.getTime() > Date.now()) {
+
+  if (timeExplicit) {
+    // User said "Friday 4 pm" – include requested slot ±2 hours
+    const baseMs = baseDate.getTime();
+    for (let offset = -120; offset <= 120; offset += 30) {
+      const start = new Date(baseMs + offset * 60 * 1000);
+      const end = new Date(start.getTime() + 30 * 60 * 1000);
+      if (start.getTime() > Date.now()) {
+        slots.push({ start: start.toISOString(), end: end.toISOString() });
+      }
+    }
+    return slots.filter(isWithinBusinessHours).slice(0, 9);
+  }
+
+  // User said "Friday" without time – generate full business day (9 AM–6 PM)
+  // baseDate is already 9 AM on the target day in calendar tz; add hours for 6 PM
+  const dayStartUtc = baseDate;
+  const dayEndUtc = new Date(baseDate.getTime() + (BUSINESS_END_HOUR - BUSINESS_START_HOUR) * 60 * 60 * 1000);
+  const now = Date.now();
+  for (let t = dayStartUtc.getTime(); t < dayEndUtc.getTime(); t += 30 * 60 * 1000) {
+    const start = new Date(t);
+    const end = new Date(t + 30 * 60 * 1000);
+    if (start.getTime() > now) {
       slots.push({ start: start.toISOString(), end: end.toISOString() });
     }
   }
-  return slots.slice(0, 9); // cap at 9 slots
+  return slots.slice(0, 36); // cap at 18 slots per day (9–6 = 9 hours = 18 slots)
 }
 
-function parseDayTimeExpression(input: string): Date | null {
+function parseDayTimeExpression(input: string): { date: Date | null; timeExplicit: boolean } {
   const s = input.trim().toLowerCase();
-  if (!s) return null;
+  const nil = { date: null as Date | null, timeExplicit: false };
+  if (!s) return nil;
 
   const now = new Date();
   const weekdays: Record<string, number> = {
@@ -167,22 +205,25 @@ function parseDayTimeExpression(input: string): Date | null {
   };
 
   const timeMatch = s.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+  const timeExplicit = !!timeMatch;
   let hour = 9;
   let minute = 0;
   if (timeMatch) {
     hour = parseInt(timeMatch[1], 10);
     minute = parseInt(timeMatch[2] || '0', 10);
     const ampm = timeMatch[3];
-    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return nil;
     if (ampm === 'pm' && hour !== 12) hour += 12;
     if (ampm === 'am' && hour === 12) hour = 0;
   }
+
+  const ret = (d: Date | null) => d ? { date: d, timeExplicit } : nil;
 
   // Today / tonight
   if (/\b(today|tonight)\b/.test(s)) {
     const d = new Date(now);
     d.setHours(hour, minute, 0, 0);
-    return d.getTime() > now.getTime() ? d : null;
+    return ret(d.getTime() > now.getTime() ? d : null);
   }
 
   // Tomorrow
@@ -190,7 +231,7 @@ function parseDayTimeExpression(input: string): Date | null {
     const d = new Date(now);
     d.setDate(d.getDate() + 1);
     d.setHours(hour, minute, 0, 0);
-    return d.getTime() > now.getTime() ? d : null;
+    return ret(d.getTime() > now.getTime() ? d : null);
   }
 
   // Next Monday, next Friday, next week Monday, etc.
@@ -203,7 +244,7 @@ function parseDayTimeExpression(input: string): Date | null {
       if (daysUntil === 0) daysUntil = 7; // "next Monday" = next week's Monday
       d.setDate(d.getDate() + daysUntil);
       d.setHours(hour, minute, 0, 0);
-      return d.getTime() > now.getTime() ? d : null;
+      return ret(d.getTime() > now.getTime() ? d : null);
     }
   }
 
@@ -234,7 +275,7 @@ function parseDayTimeExpression(input: string): Date | null {
   if (monthNum !== undefined && dayNum !== undefined && dayNum >= 1 && dayNum <= 31) {
     let d = new Date(yearNum, monthNum, dayNum, hour, minute, 0, 0);
     if (d.getTime() <= now.getTime()) d.setFullYear(yearNum + 1);
-    return d.getTime() > now.getTime() ? d : null;
+    return ret(d.getTime() > now.getTime() ? d : null);
   }
   const slashMatch = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
   if (slashMatch) {
@@ -245,7 +286,7 @@ function parseDayTimeExpression(input: string): Date | null {
     if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
       const date = new Date(year, month, day, hour, minute, 0, 0);
       if (date.getTime() <= now.getTime() && !y) date.setFullYear(year + 1);
-      return date.getTime() > now.getTime() ? date : null;
+      return ret(date.getTime() > now.getTime() ? date : null);
     }
   }
 
@@ -261,11 +302,11 @@ function parseDayTimeExpression(input: string): Date | null {
       if (candidate.getTime() <= now.getTime()) {
         candidate.setDate(candidate.getDate() + 7);
       }
-      return candidate.getTime() > now.getTime() ? candidate : null;
+      return ret(candidate.getTime() > now.getTime() ? candidate : null);
     }
   }
 
-  return null;
+  return nil;
 }
 
 // Try to fix unsubstituted Atoms variables using last availability response
@@ -375,6 +416,14 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
     const { start, end, clientEmail, purpose, attendeeName } = parsed.data;
     logger.info('webhook_confirm_meeting_received', { start, end, clientEmail, purpose });
 
+    // Business hours: 9 AM - 6 PM only
+    if (!isWithinBusinessHours({ start, end })) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Appointments can only be scheduled between 9 AM and 6 PM.'
+      });
+    }
+
     // Safety gate: never create an event if the requested slot is busy.
     const requestedSlot = [{ start, end }];
     const availableForRequestedSlot = await googleCalendarService.findAvailableSlots(requestedSlot);
@@ -395,14 +444,17 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
 
     let emailResult: { sent: boolean; reason?: string } = { sent: false };
     try {
+      const receiverEmail = env.GCP_SUBJECT_EMAIL || env.GCP_CLIENT_EMAIL;
+      const meetLink = event.hangoutLink || event.conferenceData?.entryPoints?.[0]?.uri;
       emailResult = await emailService.sendBookingConfirmation({
-        to: clientEmail,
+        to: [clientEmail, receiverEmail],
         attendeeName,
         summary: purpose || 'Meeting via Receptionist',
         startIso: start,
         endIso: end,
         eventLink: event.htmlLink || undefined,
-        organizerEmail: env.GCP_SUBJECT_EMAIL || env.GCP_CLIENT_EMAIL,
+        meetLink: meetLink || undefined,
+        organizerEmail: receiverEmail,
         organizerName: 'Malikaa'
       });
     } catch (emailErr: any) {

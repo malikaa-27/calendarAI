@@ -1,13 +1,13 @@
 {
   "kind": "calendar#event",
-  "etag": "\"3544128121082398\"",
-  "id": "jb40u3mo0ni8ldtbhfvmpusfrc",
+  "etag": "\"3544130393806142\"",
+  "id": "2a5ovgf5kbgn1kn5fvi99sjuic",
   "status": "confirmed",
-  "htmlLink": "https://www.google.com/calendar/event?eid=amI0MHUzbW8wbmk4bGR0Ymhmdm1wdXNmcmMgbWFsaWthYW1hcmF0aGUwM0Bt",
-  "created": "2026-02-26T00:01:00.000Z",
-  "updated": "2026-02-26T00:01:00.541Z",
-  "summary": "To discuss funding",
-  "description": "With: Malika (malikaa@smallest.ai)",
+  "htmlLink": "https://www.google.com/calendar/event?eid=MmE1b3ZnZjVrYmduMWtuNWZ2aTk5c2p1aWMgbWFsaWthYW1hcmF0aGUwM0Bt",
+  "created": "2026-02-26T00:19:56.000Z",
+  "updated": "2026-02-26T00:19:56.903Z",
+  "summary": "Fundraising",
+  "description": "With: Malika Marathi (malikaa@smallest.ai)",
   "creator": {
     "email": "malikaa@receptionist-488320.iam.gserviceaccount.com"
   },
@@ -16,14 +16,14 @@
     "self": true
   },
   "start": {
-    "dateTime": "2026-03-03T03:00:00-08:00",
+    "dateTime": "2026-02-27T10:30:00-08:00",
     "timeZone": "UTC"
   },
   "end": {
-    "dateTime": "2026-03-03T03:30:00-08:00",
+    "dateTime": "2026-02-27T11:00:00-08:00",
     "timeZone": "UTC"
   },
-  "iCalUID": "jb40u3mo0ni8ldtbhfvmpusfrc@google.com",
+  "iCalUID": "2a5ovgf5kbgn1kn5fvi99sjuic@google.com",
   "sequence": 0,
   "reminders": {
     "useDefault": true
