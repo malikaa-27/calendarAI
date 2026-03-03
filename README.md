@@ -10,6 +10,8 @@ An AI voice receptionist that schedules meetings via phone. Callers speak to an 
 - **Smallest.ai** account (for Atoms voice agent)
 - **ngrok** (free tier) for local development
 
+**Quick path (Option A – duplicate the agent):** Clone → Install server + client → Google Cloud → Create `server/.env` → Run server + ngrok → Run `npm run setup-atoms -- <ngrok-url>` → Add agent ID to both `.env` files → Test. Skip Step 6.
+
 ---
 
 ## Step 1: Clone and Install
@@ -20,8 +22,8 @@ cd calendarAI
 ```
 
 ```bash
-cd server
-npm install
+cd server && npm install
+cd ../client && npm install
 ```
 
 ---
@@ -63,19 +65,26 @@ From the downloaded JSON:
 
 ## Step 3: Smallest.ai / Atoms Setup
 
-**Option A – Duplicate the agent (recommended)**  
-Creates a new agent with the same workflow, voice, and prompt:
-```bash
-npm run setup-atoms -- https://your-ngrok.ngrok-free.dev
-```
-Add the output agent ID to `client/.env` and `server/.env`. See `scripts/README.md`.
+**Option A – Duplicate the agent (recommended)**
+
+1. Sign up at [Smallest.ai](https://smallest.ai) and get your **API Key**
+2. Add `SMALLEST_API_KEY` to `server/.env` (Step 4)
+3. **After Step 5** (once you have your ngrok URL), run:
+   ```bash
+   npm run setup-atoms -- https://YOUR-NGROK-URL
+   ```
+   Replace `https://YOUR-NGROK-URL` with your actual ngrok URL (e.g. `https://abc123.ngrok-free.app`).
+4. The script outputs a new agent ID. Add it to both env files:
+   - `server/.env`: `SMALLEST_RECEPTIONIST_AGENT_ID=<agent-id>`
+   - `client/.env`: Create from `client/.env.example` and set `VITE_SMALLEST_ASSISTANT_ID=<agent-id>`
+5. **Skip Step 6** – the workflow is already configured.
 
 **Option B – Manual**
 
 1. Sign up at [Smallest.ai](https://smallest.ai)
 2. Create an **Atoms** agent (workflow or conversational)
 3. Note your **Agent ID** and **API Key** for `.env`
-4. You’ll configure the API calls in Atoms in Step 6
+4. Configure the API calls in Atoms (Step 6)
 
 ---
 
@@ -103,6 +112,12 @@ Edit `server/.env`:
 | `SMTP_PASS` | Optional | App password (Gmail: use App Password) |
 | `EMAIL_FROM` | Optional | e.g. `"Calendar Receptionist <you@gmail.com>"` |
 
+**Client:** Create `client/.env` from the example and add your agent ID (from Step 3 Option A, or from Atoms if Option B):
+```bash
+cp client/.env.example client/.env
+# Edit client/.env: VITE_SMALLEST_ASSISTANT_ID=<your-agent-id>
+```
+
 ---
 
 ## Step 5: Run the Server and ngrok
@@ -126,9 +141,11 @@ Copy the HTTPS URL (e.g. `https://abc123.ngrok-free.app`). This is your webhook 
 
 ---
 
-## Step 6: Configure Atoms Agent
+## Step 6: Configure Atoms Agent (Option B only)
 
-In the [Smallest.ai Atoms](https://atoms.smallest.ai) dashboard, configure your agent as follows.
+**Skip this step if you used Option A.** The setup script already configured the workflow, APIs, and prompt.
+
+If you created your agent manually (Option B), configure it in the [Smallest.ai Atoms](https://atoms.smallest.ai) dashboard as follows.
 
 ### 6.1 LLM Parameter (Required)
 
@@ -206,11 +223,13 @@ These are typically collected via conversation nodes and stored as variables.
 
 ## Step 7: Test
 
-1. Ensure the server is running and ngrok is active
-2. In Atoms, trigger a test call (or use the web client)
-3. Say you want to schedule a meeting (e.g. "I’d like to book for tomorrow at 2 pm")
-4. Provide name, email, and purpose when asked
-5. Confirm the booking
+1. **Terminal 1:** `cd server && npm run dev`
+2. **Terminal 2:** `ngrok http 4000`
+3. **Terminal 3:** `cd client && npm run dev`
+4. Open the client in your browser, or trigger a test call from the Atoms dashboard
+5. Say you want to schedule a meeting (e.g. "I'd like to book for tomorrow at 2 pm")
+6. Provide name, email, and purpose when asked
+7. Confirm the booking
 
 Check ngrok at `http://127.0.0.1:4040` to inspect requests and responses.
 
@@ -234,13 +253,18 @@ Check ngrok at `http://127.0.0.1:4040` to inspect requests and responses.
 
 ```
 calendarAI/
+├── client/                                   # React web app with Atoms widget
+│   ├── src/App.tsx
+│   └── .env                                  # VITE_SMALLEST_ASSISTANT_ID
 ├── server/
 │   ├── src/
 │   │   ├── controllers/webhookController.ts   # Availability & confirm-meeting logic
 │   │   ├── services/googleCalendarService.ts # Calendar API
 │   │   └── services/emailService.ts          # Confirmation emails
 │   └── .env                                  # Your secrets (not in git)
-├── AGENT_PROMPT.txt                          # Full prompt template for Atoms
+├── scripts/                                  # Export, setup, list-agents (see scripts/README.md)
+├── atoms-agent-config.json                   # Agent + workflow for duplication
+├── AGENT_PROMPT.txt                          # Full prompt template (Option B)
 ├── ATOMS_CONFIG_NOW.txt                      # Quick reference for Atoms config
 └── README.md                                 # This file
 ```

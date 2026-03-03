@@ -1,39 +1,6 @@
 # Atoms Agent Scripts
 
-Duplicate the Calendar Receptionist agent—workflow, voice, prompt, and all particulars—so anyone who clones the repo gets an identical agent.
-
-## For repo owners (you)
-
-### 1. Find your agent ID (if needed)
-
-```bash
-npm run list-atoms-agents
-```
-
-Lists your agents and their IDs. Use the one that matches your Calendar Receptionist.
-
-### 2. Export your full agent config
-
-```bash
-npm run export-atoms
-# Or with a specific agent ID: node scripts/export-atoms-workflow.js <agentId>
-```
-
-This fetches your agent (voice, prompt, settings) and workflow, saves to `atoms-agent-config.json`, and replaces webhook URLs with `{{WEBHOOK_BASE_URL}}`.
-
-**Prerequisites:** `server/.env` with `SMALLEST_API_KEY` and `SMALLEST_RECEPTIONIST_AGENT_ID`
-
-### 3. Commit the config
-
-```bash
-git add atoms-agent-config.json
-git commit -m "Add Atoms agent config for duplication"
-git push
-```
-
-If export fails (e.g. agent not found via API), the repo includes a default `atoms-agent-config.json` so setup still works.
-
----
+Quick reference for duplicating the Calendar Receptionist agent. See the main [README](../README.md) for full setup.
 
 ## For anyone who clones the repo
 
@@ -67,16 +34,17 @@ This creates a new agent with the same workflow, voice, prompt, and API config�
 
 ### 4. Add the new agent ID
 
-The script outputs the new agent ID. Add it to `client/.env`:
+The script outputs the new agent ID. Add it to both env files:
 
-```
-VITE_SMALLEST_ASSISTANT_ID=<the-new-agent-id>
-```
-
-And to `server/.env`:
-
+**server/.env:**
 ```
 SMALLEST_RECEPTIONIST_AGENT_ID=<the-new-agent-id>
+```
+
+**client/.env:** Create from example if needed, then add:
+```bash
+cp client/.env.example client/.env   # if client/.env doesn't exist
+# Edit: VITE_SMALLEST_ASSISTANT_ID=<the-new-agent-id>
 ```
 
 ### 5. Run the app
