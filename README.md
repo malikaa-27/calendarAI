@@ -63,6 +63,15 @@ From the downloaded JSON:
 
 ## Step 3: Smallest.ai / Atoms Setup
 
+**Option A – Duplicate the agent (recommended)**  
+Creates a new agent with the same workflow, voice, and prompt:
+```bash
+npm run setup-atoms -- https://your-ngrok.ngrok-free.dev
+```
+Add the output agent ID to `client/.env` and `server/.env`. See `scripts/README.md`.
+
+**Option B – Manual**
+
 1. Sign up at [Smallest.ai](https://smallest.ai)
 2. Create an **Atoms** agent (workflow or conversational)
 3. Note your **Agent ID** and **API Key** for `.env`

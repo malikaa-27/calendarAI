@@ -25,7 +25,7 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
-  CALENDAR_TIMEZONE: z.string().optional()
+  CALENDAR_TIMEZONE: z.string().default('America/Los_Angeles')
 });
 
 const parsed = envSchema.safeParse(process.env);

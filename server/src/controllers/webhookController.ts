@@ -34,6 +34,32 @@ function isWithinBusinessHours(slot: { start: string; end: string }): boolean {
   return startH >= BUSINESS_START_HOUR && endH <= BUSINESS_END_HOUR;
 }
 
+/**
+ * Atoms/LLM sometimes sends slots with UTC hour = local hour (e.g. 11 AM Pacific sent as 11:00 UTC).
+ * If the slot fails business hours but the UTC hour is 9-18, try re-interpreting as Pacific time.
+ */
+function tryCorrectSlotAsPacific(start: string, end: string): { start: string; end: string } | null {
+  const tz = env.CALENDAR_TIMEZONE || 'America/Los_Angeles';
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const startHourUtc = startDate.getUTCHours();
+  const startMinUtc = startDate.getUTCMinutes();
+  const durationMs = endDate.getTime() - startDate.getTime();
+
+  // Only try correction if UTC hour looks like a naive local time (9-18)
+  if (startHourUtc < 9 || startHourUtc > 18) return null;
+
+  const y = startDate.getUTCFullYear();
+  const m = startDate.getUTCMonth();
+  const d = startDate.getUTCDate();
+  // Create date with these components interpreted as Pacific
+  const localDate = new Date(y, m, d, startHourUtc, startMinUtc, 0, 0);
+  const correctedStart = fromZonedTime(localDate, tz);
+  const correctedEnd = new Date(correctedStart.getTime() + durationMs);
+  const corrected = { start: correctedStart.toISOString(), end: correctedEnd.toISOString() };
+  return isWithinBusinessHours(corrected) ? corrected : null;
+}
+
 const slotSchema = z.object({
   start: z.string().datetime(),
   end: z.string().datetime()
@@ -403,25 +429,40 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
           error: 'Invalid confirm meeting payload',
           hint: 'Atoms sent unsubstituted template variables. In your confirmMeeting API function, add LLM parameters for: selected_slot_start_iso, selected_slot_end_iso, client_email, caller_name. Map slot from getAvailableSlots response (e.g. first_slot_start) and extract email/name from user input.',
           unsubstitutedFields: unsubstituted,
-          details
+          details,
+          confirmationMessage: "I'm sorry, I couldn't complete the booking. Could you please tell me your email and preferred time again?"
         });
       }
       const hint =
         details.formErrors?.includes('Meeting end must be after start')
           ? 'Check Atoms: variable selected_slot_end_iso must have NO trailing space. Body must use {{selected_slot_end_iso}} for end.'
           : undefined;
-      return res.status(400).json({ error: 'Invalid confirm meeting payload', details, ...(hint && { hint }) });
+      return res.status(400).json({
+        error: 'Invalid confirm meeting payload',
+        details,
+        ...(hint && { hint }),
+        confirmationMessage: "I'm sorry, I couldn't complete the booking. Would you like to try again with a different time?"
+      });
     }
 
-    const { start, end, clientEmail, purpose, attendeeName } = parsed.data;
+    let { start, end, clientEmail, purpose, attendeeName } = parsed.data;
     logger.info('webhook_confirm_meeting_received', { start, end, clientEmail, purpose });
 
-    // Business hours: 9 AM - 6 PM only
+    // Business hours: 9 AM - 6 PM only (in calendar timezone = Pacific)
     if (!isWithinBusinessHours({ start, end })) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Appointments can only be scheduled between 9 AM and 6 PM.'
-      });
+      // Atoms/LLM sometimes sends "11 AM" as 11:00 UTC instead of 11 AM Pacific. Try to fix.
+      const corrected = tryCorrectSlotAsPacific(start, end);
+      if (corrected) {
+        logger.info('confirm_meeting_slot_corrected_from_utc_to_pacific', { original: { start, end }, corrected });
+        start = corrected.start;
+        end = corrected.end;
+      } else {
+        return res.status(400).json({
+          ok: false,
+          error: 'Appointments can only be scheduled between 9 AM and 6 PM.',
+          confirmationMessage: "I'm sorry, appointments can only be scheduled between 9 AM and 6 PM. Would you like to choose a different time?"
+        });
+      }
     }
 
     // Safety gate: never create an event if the requested slot is busy.
@@ -430,7 +471,8 @@ export async function handleConfirmMeeting(req: Request, res: Response, next: Ne
     if (availableForRequestedSlot.length === 0) {
       return res.status(409).json({
         ok: false,
-        error: 'Requested slot is unavailable. Please choose another time.'
+        error: 'Requested slot is unavailable. Please choose another time.',
+        confirmationMessage: "I'm sorry, that time slot is no longer available. Would you like me to check other times?"
       });
     }
 

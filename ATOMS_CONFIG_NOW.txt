@@ -1,0 +1,63 @@
+=== USE NGROK - COPY THIS INTO ATOMS ===
+
+Run ngrok in a terminal:  ngrok http 4000
+Your URL is shown there. Free tier: URL changes when you restart ngrok.
+
+CURRENT NGROK URL: https://cronish-prevenient-giovanni.ngrok-free.dev
+
+=== getAvailableSlots - LLM PARAMETER (REQUIRED) ===
+Add this so the day/time the caller says gets passed to the backend:
+
+  Parameter name: day_time_mentioned_by_user
+  Description: "The day and time the caller wants. Extract exactly what they said. Examples: today 2 pm, tomorrow, Friday 3 pm, next Monday, March 15, March 15 2026, March 15th next year, 12/25/2026, next week Tuesday. Any day - this week, next year, or specific date."
+
+Without this, we get fallback slots (wrong day).
+
+=== RESPONSE VARIABLE EXTRACTION (getAvailableSlots) ===
+  Variable: available_summary    Path: $.available_summary
+  Variable: selected_slot_start_iso   Path: $.first_slot_start
+  Variable: selected_slot_end_iso     Path: $.first_slot_end
+
+  CRITICAL - REMOVE these if you have them (they cause "NoneType" errors):
+  - $.available[0].start  → use $.first_slot_start instead
+  - $.available[0].end    → use $.first_slot_end instead
+  - $.formatted, $.slots  → remove entirely
+  Variable name must be exactly "selected_slot_end_iso" with NO trailing space.
+
+=== IN YOUR PROMPT ===
+Use {{available_summary}} and {{confirmation_message}} (no api. prefix - Atoms rejects dots in variable names)
+
+1. getAvailableSlots API:
+   URL: https://cronish-prevenient-giovanni.ngrok-free.dev/webhooks/check-availability
+   Method: POST
+   Headers:
+     Content-Type: application/json
+     ngrok-skip-browser-warning: true
+   Body: {"proposedSlots":[],"targetDay":"{{day_time_mentioned_by_user}}"}
+   LLM Parameter: day_time_mentioned_by_user (see above - REQUIRED)
+   Timeout: 10000
+
+2. confirmMeeting API:
+   Response Variable Extraction: confirmation_message  Path: $.confirmationMessage
+   (Do NOT add $.ok or $.event - they fail on 4xx responses. Only extract confirmation_message.)
+   URL: https://cronish-prevenient-giovanni.ngrok-free.dev/webhooks/confirm-meeting
+   Method: POST
+   Headers:
+     Content-Type: application/json
+     ngrok-skip-browser-warning: true
+   Body: {"start":"{{selected_slot_start_iso}}","end":"{{selected_slot_end_iso}}","clientEmail":"{{client_email}}","purpose":"{{meeting_purpose}}","attendeeName":"{{caller_name}}"}
+
+   If end is wrong (e.g. 6.5 hr slot): variable must be "selected_slot_end_iso" with NO trailing space.
+   Timeout: 10000
+
+=== REQUIRED: ngrok-skip-browser-warning: true ===
+Without this header, ngrok shows an interstitial page and Atoms gets HTML instead of JSON.
+
+=== IF NGROK URL CHANGES ===
+Restart ngrok → get new URL → update both API URLs in Atoms.
+
+=== STILL "NOT GETTING BACKEND CALENDAR INFO"? ===
+- Backend returns 200 (ngrok inspector at http://127.0.0.1:4040 shows requests)
+- Add Response Variable Extraction above - agent needs variables to speak the data
+- In agent prompt use {{available_summary}} and {{confirmation_message}}
+- Ensure getAvailableSlots Description tells the AI when to call it (e.g. "When user asks for a meeting or availability")

@@ -1,0 +1,69 @@
+{
+  "type": "single_prompt",
+  "data": {
+    "prompt": "Role & Objective\nYou are a professional AI receptionist for Malikaa. Your job is to help callers schedule meetings by using backend calendar APIs only. You must never guess availability. You must complete your sentences.\n\nPrimary success criteria:\n- Check requested time using backend.\n- Only offer/book slots returned by backend.\n- Collect caller name, email, and meeting purpose.\n- Confirm booking outcome accurately.\n\nOpening line: Always start with: \"Hi, you have reached Malikaa's inbox. How may I help you today?\"\n\nTone: Polite, warm, professional, concise (2–3 sentences at a time).\n\nCritical rules:\n- Never claim a slot is available unless returned by getAvailableSlots.\n- Never call confirmMeeting unless you have valid selected_slot_start_iso and selected_slot_end_iso from backend.\n- Use {{available_summary}} to tell the user times. Use {{confirmation_message}} when booking succeeds.\n- Conversation flow: Greeting → Ask day/time → getAvailableSlots → Tell times → User picks → Collect name, email, purpose → confirmMeeting → Say {{confirmation_message}}",
+    "tools": [
+      {
+        "type": "api_call",
+        "name": "getAvailableSlots",
+        "description": "Check availability for a requested date/time. Call when user asks for a meeting or availability.",
+        "url": "{{WEBHOOK_BASE_URL}}/webhooks/check-availability",
+        "method": "POST",
+        "timeout": 10000,
+        "headers": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "ngrok-skip-browser-warning", "value": "true" }
+        ],
+        "requestBodySchema": {
+          "type": "object",
+          "properties": {
+            "proposedSlots": { "type": "array", "description": "Empty array" },
+            "targetDay": { "type": "string", "description": "The day/time the caller said" }
+          },
+          "required": ["targetDay"]
+        },
+        "llmParameters": [
+          { "name": "day_time_mentioned_by_user", "description": "The day and time the caller wants. Extract exactly what they said. Examples: today 2 pm, tomorrow, Friday 3 pm, next Monday, March 15." }
+        ],
+        "responseVariables": [
+          { "variableName": "available_summary", "jsonPath": "$.available_summary" },
+          { "variableName": "selected_slot_start_iso", "jsonPath": "$.first_slot_start" },
+          { "variableName": "selected_slot_end_iso", "jsonPath": "$.first_slot_end" }
+        ]
+      },
+      {
+        "type": "api_call",
+        "name": "confirmMeeting",
+        "description": "Book the selected slot. Call only after collecting slot, email, purpose, and name.",
+        "url": "{{WEBHOOK_BASE_URL}}/webhooks/confirm-meeting",
+        "method": "POST",
+        "timeout": 10000,
+        "headers": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "ngrok-skip-browser-warning", "value": "true" }
+        ],
+        "requestBodySchema": {
+          "type": "object",
+          "properties": {
+            "start": { "type": "string" },
+            "end": { "type": "string" },
+            "clientEmail": { "type": "string" },
+            "purpose": { "type": "string" },
+            "attendeeName": { "type": "string" }
+          },
+          "required": ["start", "end", "clientEmail"]
+        },
+        "llmParameters": [
+          { "name": "selected_slot_start_iso", "description": "Start time from getAvailableSlots" },
+          { "name": "selected_slot_end_iso", "description": "End time from getAvailableSlots" },
+          { "name": "client_email", "description": "Caller's email for calendar invite" },
+          { "name": "meeting_purpose", "description": "Purpose of the meeting" },
+          { "name": "caller_name", "description": "Caller's name" }
+        ],
+        "responseVariables": [
+          { "variableName": "confirmation_message", "jsonPath": "$.confirmationMessage" }
+        ]
+      }
+    ]
+  }
+}

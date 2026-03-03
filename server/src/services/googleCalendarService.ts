@@ -106,27 +106,31 @@ class GoogleCalendarService {
       throw err;
     }
 
-    const event = {
+    const baseEvent = {
       summary,
       description: description || undefined,
       start: { dateTime: start.toISOString() },
       end: { dateTime: end.toISOString() },
       attendees: attendees.map((a) => ({ email: a.email, displayName: a.displayName })),
-      reminders: { useDefault: true },
+      reminders: { useDefault: true }
+    } as any;
+
+    const eventWithMeet = {
+      ...baseEvent,
       conferenceData: {
         createRequest: {
           conferenceSolutionKey: { type: 'hangoutsMeet' },
           requestId: `meet-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
         }
       }
-    } as any;
+    };
 
     const calendarId = env.GCP_SUBJECT_EMAIL || env.GCP_CLIENT_EMAIL;
     let created;
     try {
       created = await this.calendar.events.insert({
         calendarId,
-        requestBody: event,
+        requestBody: eventWithMeet,
         sendUpdates: 'all',
         conferenceDataVersion: 1
       });
@@ -135,17 +139,23 @@ class GoogleCalendarService {
       const message = error?.message || 'Google Calendar event insert failed';
 
       // If domain-wide delegation is not configured, Google rejects attendee invites.
-      // We still create the event on the calendar owner without attendees as a fallback.
       if (typeof message === 'string' && message.includes('Domain-Wide Delegation')) {
-        const fallbackEvent = {
-          ...event,
-          attendees: []
-        };
+        const fallbackEvent = { ...baseEvent, attendees: [] };
         created = await this.calendar.events.insert({
           calendarId,
           requestBody: fallbackEvent,
-          sendUpdates: 'none',
-          conferenceDataVersion: 1
+          sendUpdates: 'none'
+        });
+        return created.data;
+      }
+
+      // Some calendars reject hangoutsMeet via API ("Invalid conference type value").
+      // Retry without conference data - event still gets created, just no Meet link.
+      if (typeof message === 'string' && message.includes('Invalid conference type value')) {
+        created = await this.calendar.events.insert({
+          calendarId,
+          requestBody: baseEvent,
+          sendUpdates: 'all'
         });
         return created.data;
       }
